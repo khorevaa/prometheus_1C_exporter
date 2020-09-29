@@ -22,8 +22,8 @@ func (this *ExplorerAvailablePerformance) Construct(s Isettings, cerror chan err
 
 	this.summary = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name: this.GetName(),
-			Help: "Доступная производительность хоста",
+			Name:       this.GetName(),
+			Help:       "Доступная производительность хоста",
 			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		},
 		[]string{"host"},
@@ -76,8 +76,6 @@ FOR:
 	}
 }
 
-
-
 func (this *ExplorerAvailablePerformance) getData() (data map[string]float64, err error) {
 	data = make(map[string]float64)
 
@@ -88,7 +86,11 @@ func (this *ExplorerAvailablePerformance) getData() (data map[string]float64, er
 	param = append(param, "process")
 	param = append(param, "list")
 	param = append(param, fmt.Sprintf("--cluster=%v", this.GetClusterID()))
+	if len(this.settings.Cluster()) > 0 {
 
+		param = append(param, this.settings.Cluster())
+
+	}
 	cmdCommand := exec.Command(this.settings.RAC_Path(), param...)
 	if result, err := this.run(cmdCommand); err != nil {
 		lr.StandardLogger().WithField("Name", this.GetName()).WithError(err).Error()

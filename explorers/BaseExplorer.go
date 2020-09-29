@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	logrusRotate "github.com/LazarenkoA/LogrusRotate"
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
+	"io/ioutil"
 	"net/http"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +30,7 @@ var (
 type Isettings interface {
 	GetLogPass(string) (log string, pass string)
 	RAC_Path() string
+	Cluster() string
 	GetExplorers() map[string]map[string]interface{}
 	GetProperty(string, string, interface{}) interface{}
 }
@@ -43,7 +47,6 @@ type Iexplorer interface {
 	StartExplore()
 	GetName() string
 }
-
 
 //////////////////////// Типы ////////////////////////////
 
@@ -62,7 +65,7 @@ type BaseExplorer struct {
 	ctx         context.Context
 	ctxFunc     context.CancelFunc
 	//mutex       *sync.Mutex
-	isLocked    int32
+	isLocked int32
 	// mock object
 	dataGetter func() ([]map[string]string, error)
 }
@@ -104,7 +107,7 @@ func (this *BaseExplorer) StartExplore() {
 
 }
 func (this *BaseExplorer) GetName() string {
-	return  "Base"
+	return "Base"
 }
 
 func (this *BaseExplorer) run(cmd *exec.Cmd) (string, error) {
@@ -140,9 +143,86 @@ func (this *BaseExplorer) run(cmd *exec.Cmd) (string, error) {
 
 			return "", errors.New(errText)
 		} else {
-			return cmd.Stdout.(*bytes.Buffer).String(), nil
+
+			in := cmd.Stdout.(*bytes.Buffer).Bytes()
+			dec := charmap.CodePage866.NewDecoder()
+
+			out, err := dec.Bytes(in)
+
+			//decoded, err :=  decodeBytes()
+
+			if err != nil {
+				return "", err
+			}
+
+			return string(out), nil
 		}
 	}
+}
+
+func decodeBytes(raw []byte) ([]byte, error) {
+
+	cs := detectFileCharset(raw)
+
+	var Endianness unicode.Endianness
+
+	switch {
+	case cs == other:
+
+		// Make a Reader that uses utf16bom:
+		unicodeReader := transform.NewReader(bytes.NewReader(raw), charmap.Windows1251.NewDecoder())
+
+		// decode and print:
+		decoded, err := ioutil.ReadAll(unicodeReader)
+		return decoded, err
+
+	case cs == utf8withBOM:
+		return raw[3:], nil
+	case cs == utf16Be:
+		Endianness = unicode.BigEndian
+	case cs == utf16Le:
+		Endianness = unicode.LittleEndian
+	}
+
+	// Make an tranformer that converts MS-Win default to UTF8:
+	win16be := unicode.UTF16(Endianness, unicode.IgnoreBOM)
+	// Make a transformer that is like win16be, but abides by BOM:
+	utf16bom := unicode.BOMOverride(win16be.NewDecoder())
+
+	// Make a Reader that uses utf16bom:
+	unicodeReader := transform.NewReader(bytes.NewReader(raw), utf16bom)
+
+	// decode and print:
+	decoded, err := ioutil.ReadAll(unicodeReader)
+	return decoded, err
+
+}
+
+type charset byte
+
+const (
+	utf8withBOM = charset(iota)
+	utf16Be
+	utf16Le
+	other
+)
+
+func detectFileCharset(data []byte) charset {
+
+	// Проверка на BOM
+	if len(data) >= 3 {
+		switch {
+		case data[0] == 0xFF && data[1] == 0xFE:
+			return utf16Be
+		case data[0] == 0xFE && data[1] == 0xFF:
+			return utf16Le
+		case data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF:
+			// wanna Check special ascii codings here?
+			return utf8withBOM
+		}
+	}
+
+	return other
 }
 
 // Своеобразный middleware
@@ -198,7 +278,7 @@ func (this *BaseExplorer) Continue() {
 	logrusRotate.StandardLogger().Trace("Continue. begin")
 	defer logrusRotate.StandardLogger().Trace("Continue. end")
 
-	if atomic.CompareAndSwapInt32(&this.isLocked, 1, 0)  {
+	if atomic.CompareAndSwapInt32(&this.isLocked, 1, 0) {
 		this.Unlock()
 		logrusRotate.StandardLogger().Trace("Continue. Блокировка снята")
 	} else {
@@ -210,13 +290,25 @@ func (this *BaseRACExplorer) formatMultiResult(data string, licData *[]map[strin
 	logrusRotate.StandardLogger().Trace("Парс многострочного результата")
 
 	*licData = []map[string]string{} // очистка
-	reg := regexp.MustCompile(`(?m)^$`)
-	for _, part := range reg.Split(data, -1) {
-		data := this.formatResult(part)
-		if len(data) == 0 {
-			continue
+	//reg := regexp.MustCompile(`(?m)^$`)
+	values := strings.Split(data, "\r\n")
+	logrusRotate.StandardLogger().WithField("count", len(values)).Trace("Парс многострочного результата")
+
+	part := ""
+
+	for _, str := range values {
+
+		part += str + "\n"
+
+		if len(str) == 0 {
+			partData := this.formatResult(part)
+			if len(partData) == 0 {
+				continue
+			}
+			*licData = append(*licData, partData)
+			part = ""
 		}
-		*licData = append(*licData, data)
+
 	}
 }
 
@@ -252,7 +344,14 @@ func (this *BaseRACExplorer) GetClusterID() string {
 		this.mutex().Lock()
 		defer this.mutex().Unlock()
 
-		cmdCommand := exec.Command(this.settings.RAC_Path(), "cluster", "list")
+		param := []string{"cluster", "list"}
+		if len(this.settings.Cluster()) > 0 {
+
+			param = append(param, this.settings.Cluster())
+
+		}
+		cmdCommand := exec.Command(this.settings.RAC_Path(), param...)
+
 		cluster := make(map[string]string)
 		if result, err := this.run(cmdCommand); err != nil {
 			this.cerror <- fmt.Errorf("Произошла ошибка выполнения при попытки получить идентификатор кластера: \n\t%v", err.Error()) // Если идентификатор кластера не получен нет смысла проболжать работу пиложения
@@ -275,7 +374,7 @@ func (this *BaseRACExplorer) GetClusterID() string {
 	return this.clusterID
 }
 
-func (this *Metrics) Append(ex... Iexplorer) {
+func (this *Metrics) Append(ex ...Iexplorer) {
 	this.Explorers = append(this.Explorers, ex...)
 }
 
@@ -314,7 +413,7 @@ func (this *Metrics) findExplorer(name string) Iexplorer {
 func Pause(metrics *Metrics) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w,  fmt.Sprintf("Метод %q не поддерживается", r.Method), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Метод %q не поддерживается", r.Method), http.StatusInternalServerError)
 			return
 		}
 		logrusRotate.StandardLogger().WithField("URL", r.URL.RequestURI()).Trace("Пауза")
@@ -355,7 +454,7 @@ func Pause(metrics *Metrics) http.Handler {
 func Continue(metrics *Metrics) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w,  fmt.Sprintf("Метод %q не поддерживается", r.Method), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Метод %q не поддерживается", r.Method), http.StatusInternalServerError)
 			return
 		}
 		logrusRotate.StandardLogger().WithField("URL", r.URL.RequestURI()).Trace("Продолжить")

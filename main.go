@@ -23,7 +23,7 @@ type RotateConf struct {
 	settings *settings
 }
 
-func init()  {
+func init() {
 	exp.CForce = make(chan bool, 1)
 }
 
@@ -82,7 +82,7 @@ func main() {
 	}()
 
 	siteMux := http.NewServeMux()
-	siteMux.Handle("/1C_Metrics", promhttp.Handler())
+	siteMux.Handle("/metrics", promhttp.Handler())
 	siteMux.Handle("/Continue", exp.Continue(metric))
 	siteMux.Handle("/Pause", exp.Pause(metric))
 
@@ -101,7 +101,7 @@ func main() {
 
 	go func() {
 		fmt.Println("port :", port)
-		if err := http.ListenAndServe(":"+port, siteMux); err != nil {
+		if err := http.ListenAndServe("192.168.57.145:"+port, siteMux); err != nil {
 			cerror <- err
 		}
 	}()

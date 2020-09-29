@@ -15,22 +15,24 @@ import (
 )
 
 type settings struct {
-	mx          *sync.RWMutex `yaml:"-"`
+	mx *sync.RWMutex `yaml:"-"`
 	//login, pass string        `yaml:"-"`
-	bases       []Bases       `yaml:"-"`
+	bases []Bases `yaml:"-"`
 
-	Explorers [] *struct {
+	Explorers []*struct {
 		Name     string                 `yaml:"Name"`
 		Property map[string]interface{} `yaml:"Property"`
 	} `yaml:"Explorers"`
 
-	MSURL  string `yaml:"MSURL"`
-	MSUSER string `yaml:"MSUSER"`
-	MSPAS  string `yaml:"MSPAS"`
-	LogDir string `yaml:"LogDir"`
-	LogLevel int `yaml:"LogLevel"`
-	TimeRotate int `yaml:"TimeLogs"`
-	TTLLogs int `yaml:"TTLLogs"`
+	MSURL      string `yaml:"MSURL"`
+	MSUSER     string `yaml:"MSUSER"`
+	MSPAS      string `yaml:"MSPAS"`
+	LogDir     string `yaml:"LogDir"`
+	LogLevel   int    `yaml:"LogLevel"`
+	TimeRotate int    `yaml:"TimeLogs"`
+	TTLLogs    int    `yaml:"TTLLogs"`
+	RACPath    string `yaml:"rac"`
+	AppCluster string `yaml:"cluster"`
 }
 
 type Bases struct {
@@ -67,7 +69,7 @@ func loadSettings(filePath string) *settings {
 	return s
 }
 
-func (s *settings) GetLogPass(ibname string) (login, pass string){
+func (s *settings) GetLogPass(ibname string) (login, pass string) {
 	s.mx.RLock()
 	defer s.mx.RUnlock()
 
@@ -83,7 +85,14 @@ func (s *settings) GetLogPass(ibname string) (login, pass string){
 }
 
 func (s *settings) RAC_Path() string {
-	return "/opt/1C/v8.3/x86_64/rac"
+	//return "/opt/1C/v8.3/x86_64/rac"
+
+	return s.RACPath
+}
+func (s *settings) Cluster() string {
+	//return "/opt/1C/v8.3/x86_64/rac"
+
+	return s.AppCluster
 }
 
 func (s *settings) getMSdata(cForce chan bool) {
@@ -121,7 +130,7 @@ func (s *settings) getMSdata(cForce chan bool) {
 	go func() {
 		for {
 			select {
-			case f := <- cForce:
+			case f := <-cForce:
 				if f {
 					logrusRotate.StandardLogger().Info("Принудительно запрашиваем список баз из МС")
 					get()
@@ -144,7 +153,7 @@ func (s *settings) GetProperty(explorerName string, propertyName string, default
 	}
 }
 
-func (s *settings) GetExplorers()map[string]map[string]interface{}  {
+func (s *settings) GetExplorers() map[string]map[string]interface{} {
 	result := make(map[string]map[string]interface{}, 0)
 	for _, item := range s.Explorers {
 		result[item.Name] = item.Property

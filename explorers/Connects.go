@@ -95,6 +95,12 @@ func (this *ExplorerConnects) getConnects() (connData []map[string]string, err e
 	param = append(param, "list")
 	param = append(param, fmt.Sprintf("--cluster=%v", this.GetClusterID()))
 
+	if len(this.settings.Cluster()) > 0 {
+
+		param = append(param, this.settings.Cluster())
+
+	}
+
 	cmdCommand := exec.Command(this.settings.RAC_Path(), param...)
 	if result, err := this.run(cmdCommand); err != nil {
 		logrusRotate.StandardLogger().WithField("Name", this.GetName()).WithError(err).Error()

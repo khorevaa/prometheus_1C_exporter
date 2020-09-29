@@ -21,8 +21,8 @@ func (this *ExplorerClientLic) Construct(s Isettings, cerror chan error) *Explor
 
 	this.summary = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name:        this.GetName(),
-			Help:        "Киентские лицензии 1С",
+			Name:       this.GetName(),
+			Help:       "Киентские лицензии 1С",
 			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		},
 		[]string{"host", "licSRV"},
@@ -32,7 +32,6 @@ func (this *ExplorerClientLic) Construct(s Isettings, cerror chan error) *Explor
 	if this.dataGetter == nil {
 		this.dataGetter = this.getLic
 	}
-
 
 	this.settings = s
 	this.cerror = cerror
@@ -46,7 +45,6 @@ func (this *ExplorerClientLic) StartExplore() {
 
 	timerNotyfy := time.Second * time.Duration(delay)
 	this.ticker = time.NewTicker(timerNotyfy)
-
 
 	host, _ := os.Hostname()
 	var group map[string]int
@@ -106,7 +104,11 @@ func (this *ExplorerClientLic) getLic() (licData []map[string]string, err error)
 	param = append(param, "list")
 	param = append(param, "--licenses")
 	param = append(param, fmt.Sprintf("--cluster=%v", this.GetClusterID()))
+	if len(this.settings.Cluster()) > 0 {
 
+		param = append(param, this.settings.Cluster())
+
+	}
 	cmdCommand := exec.Command(this.settings.RAC_Path(), param...)
 
 	logrusRotate.StandardLogger().

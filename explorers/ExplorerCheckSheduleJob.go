@@ -161,10 +161,10 @@ func (this *ExplorerCheckSheduleJob) getInfoBase(baseGuid, basename string) (map
 
 	login, pass := this.settings.GetLogPass(basename)
 	if login == "" {
-		if v, ok := this.attemptsСount[basename]; !ok || v <=3 {
+		if v, ok := this.attemptsСount[basename]; !ok || v <= 3 {
 			this.attemptsСount[basename]++ // да, не совсем потокобезопасно и может быть что по одной базе более 3х попыток, но это не критично
-			time.Sleep(time.Second*5) // что б растянуть во времени
-			CForce <- true // принудительно запрашиваем данные из МС, делаем 3 попытки что б не получилось что постоянно запросы идут по базам которых нет в МС
+			time.Sleep(time.Second * 5)    // что б растянуть во времени
+			CForce <- true                 // принудительно запрашиваем данные из МС, делаем 3 попытки что б не получилось что постоянно запросы идут по базам которых нет в МС
 		}
 		return nil, fmt.Errorf("для базы %s не определен пользователь", basename)
 	}
@@ -218,7 +218,11 @@ func (this *ExplorerCheckSheduleJob) fillBaseList() error {
 		param = append(param, "summary")
 		param = append(param, "list")
 		param = append(param, fmt.Sprintf("--cluster=%v", this.GetClusterID()))
+		if len(this.settings.Cluster()) > 0 {
 
+			param = append(param, this.settings.Cluster())
+
+		}
 		if result, err := this.run(exec.Command(this.settings.RAC_Path(), param...)); err != nil {
 			logrusRotate.StandardLogger().WithError(err).WithField("Name", this.GetName()).Error("Ошибка получения списка баз")
 			return err
